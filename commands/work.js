@@ -18,7 +18,7 @@ function createWorkEmbed(user, reward = 0, isJackpot = false, totalEarned = 0) {
     .setColor(isJackpot ? 0xf1c40f : 0x7f8c8d)
     .setDescription(
       `버튼을 연타하여 코인을 채굴하세요!\n` +
-      `기본 보상: **1 코인** | 🍀 대박 확률(3%): **100 코인**`
+      `기본 보상: **10 코인** | 🍀 대박 확률(5%): **100 코인**`
     )
     .addFields(
       {
@@ -44,7 +44,7 @@ function createWorkEmbed(user, reward = 0, isJackpot = false, totalEarned = 0) {
     } else {
       embed.addFields({
         name: '⛏️ 채굴 결과',
-        value: `조약돌을 캤습니다. **(+1 코인)**`,
+        value: `조약돌을 캤습니다. **(+10 코인)**`,
         inline: false,
       });
     }
@@ -56,7 +56,7 @@ function createWorkEmbed(user, reward = 0, isJackpot = false, totalEarned = 0) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('노가다')
-    .setDescription('버튼을 클릭하여 1코인(낮은 확률로 100코인)을 채굴합니다!'),
+    .setDescription('버튼을 클릭하여 10코인(5% 확률로 100코인)을 채굴합니다!'),
 
   async execute(interaction) {
     const userId = interaction.user.id;
@@ -85,9 +85,9 @@ module.exports = {
       });
     }
 
-    // 3% 확률로 100 코인 대박, 97% 확률로 1 코인
-    const isJackpot = Math.random() < 0.03;
-    const reward = isJackpot ? 100 : 1;
+    // 5% 확률로 100 코인 대박, 95% 확률로 10 코인
+    const isJackpot = Math.random() < 0.05;
+    const reward = isJackpot ? 100 : 10;
 
     economy.modifyCoins(clickerId, reward);
 
