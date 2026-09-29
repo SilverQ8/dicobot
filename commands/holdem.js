@@ -462,7 +462,21 @@ module.exports = {
       session.stage = 'PREFLOP';
       session.currentBet = session.bb;
       session.minRaise = session.bb;
-      session.currentTurnIndex = utgIndex;
+
+      // 올인이 아닌 첫 플레이어 찾기
+      let turnIndex = utgIndex;
+      let loopCount = 0;
+      while (session.players[turnIndex].allIn && loopCount < n) {
+        turnIndex = (turnIndex + 1) % n;
+        loopCount++;
+      }
+      session.currentTurnIndex = turnIndex;
+
+      // 만약 블라인드 납부 후 베팅 가능 인원이 1명 이하이면 카드 전부 오픈 후 쇼다운
+      const bettableRematch = session.players.filter((p) => !p.folded && !p.allIn);
+      if (bettableRematch.length <= 1) {
+        return this.advanceStreet(interaction, session);
+      }
 
       let rematchNotice = `🔄 **새로운 핸드가 시작되었습니다!** (딜러 버튼 이동 ➔ <@${session.players[session.dealerIndex].id}>)\n`;
       if (bustedNames.length > 0) {
@@ -612,7 +626,21 @@ module.exports = {
       session.stage = 'PREFLOP';
       session.currentBet = session.bb;
       session.minRaise = session.bb;
-      session.currentTurnIndex = utgIndex;
+
+      // 올인이 아닌 첫 플레이어 찾기
+      let turnIndex = utgIndex;
+      let loopCount = 0;
+      while (session.players[turnIndex].allIn && loopCount < n) {
+        turnIndex = (turnIndex + 1) % n;
+        loopCount++;
+      }
+      session.currentTurnIndex = turnIndex;
+
+      // 만약 블라인드 납부 후 베팅 가능 인원이 1명 이하이면 카드 전부 오픈 후 쇼다운
+      const bettableStart = session.players.filter((p) => !p.folded && !p.allIn);
+      if (bettableStart.length <= 1) {
+        return this.advanceStreet(interaction, session);
+      }
 
       const embed = createGameEmbed(session);
       const row = createTurnButtons(sessionId, session);
@@ -769,7 +797,7 @@ module.exports = {
     const activePlayers = session.players.filter((p) => !p.folded);
 
     // 1명만 남은 경우 즉시 승리
-    if (activePlayers.length === 1) {
+    if (activePlayers.length <= 1) {
       return this.finishGameByFold(interaction, session, activePlayers[0]);
     }
 
@@ -777,21 +805,32 @@ module.exports = {
     const bettablePlayers = activePlayers.filter((p) => !p.allIn);
 
     // 라운드 종료 조건:
-    // 모든 생존자가 행동(acted)을 마쳤고 베팅액이 currentBet과 일치하거나 올인일 때
+    // 1) 칩을 걸 수 있는 플레이어가 0명 (전원 올인)이거나,
+    // 2) 모든 생존자가 행동(acted)을 마쳤고, 올인하지 않은 모든 플레이어의 베팅액이 최고 베팅액(currentBet)과 일치할 때
     const roundFinished =
-      bettablePlayers.length <= 1 ||
-      activePlayers.every(
-        (p) => p.acted && (p.allIn || p.currentBet === session.currentBet)
-      );
+      bettablePlayers.length === 0 ||
+      (activePlayers.every((p) => p.acted) &&
+        bettablePlayers.every((p) => p.currentBet === session.currentBet));
 
     if (roundFinished) {
       return this.advanceStreet(interaction, session);
     }
 
-    // 시계 방향으로 다음 턴 플레이어 찾기
-    let nextIndex = (session.currentTurnIndex + 1) % session.players.length;
-    while (session.players[nextIndex].folded || session.players[nextIndex].allIn) {
-      nextIndex = (nextIndex + 1) % session.players.length;
+    // 시계 방향으로 다음 턴 플레이어 찾기 (루프 카운터로 무한 루프 원천 방지)
+    const n = session.players.length;
+    let nextIndex = (session.currentTurnIndex + 1) % n;
+    let loopCount = 0;
+    while (
+      (session.players[nextIndex].folded || session.players[nextIndex].allIn) &&
+      loopCount < n
+    ) {
+      nextIndex = (nextIndex + 1) % n;
+      loopCount++;
+    }
+
+    // 만약 다음 턴을 잡을 플레이어가 없다면(모두 올인/폴드) 라운드 진행
+    if (session.players[nextIndex].folded || session.players[nextIndex].allIn) {
+      return this.advanceStreet(interaction, session);
     }
 
     session.currentTurnIndex = nextIndex;
@@ -800,7 +839,28 @@ module.exports = {
 
   // 다음 스트리트 (프리플랍 -> 플랍 -> 턴 -> 리버 -> 쇼다운)
   async advanceStreet(interaction, session) {
-    // 1. 라운드 베팅 리셋
+    const activePlayers = session.players.filter((p) => !p.folded);
+
+    // 1. 생존자가 1명 이하이면 즉시 폴드 승리
+    if (activePlayers.length <= 1) {
+      return this.finishGameByFold(interaction, session, activePlayers[0]);
+    }
+
+    const deck = session.deck;
+
+    // 2. 생존자 중 칩을 더 베팅할 수 있는 인원이 1명 이하인 경우 (전원 올인 또는 1명만 칩 남음)
+    // 더 이상의 베팅 액션이 불가능하므로 남은 커뮤니티 카드를 즉시 전부 깔고 쇼다운 직행!
+    const bettablePlayers = activePlayers.filter((p) => !p.allIn);
+    if (bettablePlayers.length <= 1) {
+      while (session.communityCards.length < 5) {
+        session.burnedCards.push(deck.pop());
+        session.communityCards.push(deck.pop());
+      }
+      session.stage = 'SHOWDOWN';
+      return this.finishGameShowdown(interaction, session);
+    }
+
+    // 3. 정상적인 다음 스트리트 진행: 라운드 베팅 리셋
     session.currentBet = 0;
     session.minRaise = session.bb; // 다음 라운드 기본 레이즈액 초기화
     for (const p of session.players) {
@@ -808,9 +868,7 @@ module.exports = {
       p.acted = false;
     }
 
-    const deck = session.deck;
-
-    // 2. 정통 스트리트 전환 & Burn 카드 규칙
+    // 4. 정통 스트리트 전환 & Burn 카드 규칙
     if (session.stage === 'PREFLOP') {
       session.stage = 'FLOP';
       session.burnedCards.push(deck.pop()); // 플랍 전 1장 태우기(Burn)
@@ -828,28 +886,20 @@ module.exports = {
       return this.finishGameShowdown(interaction, session);
     }
 
-    // 3. 포스트플랍 첫 턴: 정통 룰에 따라 딜러 버튼 바로 왼쪽(SB 위치부터) 시작!
+    // 5. 포스트플랍 첫 턴: 정통 룰에 따라 딜러 버튼 바로 왼쪽(SB 위치부터) 시작!
     const n = session.players.length;
     let postflopStartIndex = (session.dealerIndex + 1) % n;
+    let loopCount = 0;
     while (
-      session.players[postflopStartIndex].folded ||
-      session.players[postflopStartIndex].allIn
+      (session.players[postflopStartIndex].folded ||
+        session.players[postflopStartIndex].allIn) &&
+      loopCount < n
     ) {
       postflopStartIndex = (postflopStartIndex + 1) % n;
+      loopCount++;
     }
+
     session.currentTurnIndex = postflopStartIndex;
-
-    // 생존 플레이어 중 2명 이상이 베팅할 수 없으면(올인 등) 바로 쇼다운까지 진행
-    const bettablePlayers = session.players.filter((p) => !p.folded && !p.allIn);
-    if (bettablePlayers.length <= 1) {
-      while (session.communityCards.length < 5) {
-        session.burnedCards.push(deck.pop());
-        session.communityCards.push(deck.pop());
-      }
-      session.stage = 'SHOWDOWN';
-      return this.finishGameShowdown(interaction, session);
-    }
-
     return updateBoardMessage(interaction, session);
   },
 
