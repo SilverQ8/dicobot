@@ -310,7 +310,15 @@ module.exports = {
 
   // 버튼 인터랙션 핸들러
   async handleButton(interaction) {
-    const [_, action, sessionId] = interaction.customId.split('_');
+    const parts = interaction.customId.split('_');
+    const action = parts[1];
+
+    if (action === 'new') {
+      const gambleCommand = require('./gamble');
+      return gambleCommand.showHoldemModal(interaction);
+    }
+
+    const sessionId = parts[2];
     const session = holdemSessions.get(sessionId);
 
     if (!session) {
@@ -336,10 +344,20 @@ module.exports = {
       }
 
       holdemSessions.delete(sessionId);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('holdem_new')
+          .setLabel('새 홀덤 테이블 개설 ♠️')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('gamble_lobby')
+          .setLabel('도박 목록 🎰')
+          .setStyle(ButtonStyle.Secondary)
+      );
       return interaction.update({
         content: '🚪 홀덤 테이블이 정상적으로 종료되었습니다. 수고하셨습니다!',
         embeds: [],
-        components: [],
+        components: [row],
       });
     }
 
@@ -371,10 +389,20 @@ module.exports = {
         if (bustedNames.length > 0) {
           msg += `\n(탈락자: ${bustedNames.join(', ')})`;
         }
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('holdem_new')
+            .setLabel('새 홀덤 테이블 개설 ♠️')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId('gamble_lobby')
+            .setLabel('도박 목록 🎰')
+            .setStyle(ButtonStyle.Secondary)
+        );
         return interaction.update({
           content: msg,
           embeds: [],
-          components: [],
+          components: [row],
         });
       }
 
@@ -495,10 +523,20 @@ module.exports = {
 
       if (session.players.length === 0) {
         holdemSessions.delete(sessionId);
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('holdem_new')
+            .setLabel('새 홀덤 테이블 개설 ♠️')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId('gamble_lobby')
+            .setLabel('도박 목록 🎰')
+            .setStyle(ButtonStyle.Secondary)
+        );
         return interaction.update({
           content: '🚪 모든 참가자가 퇴장하여 테이블이 닫혔습니다.',
           embeds: [],
-          components: [],
+          components: [row],
         });
       } else if (session.hostId === userId) {
         session.hostId = session.players[0].id;
@@ -660,11 +698,17 @@ module.exports = {
         .setCustomId(`holdem_modal_raise_${sessionId}`)
         .setTitle('♠️ 텍사스 홀덤 레이즈');
 
+      const maxAffordableRaise = Math.max(
+        0,
+        userBalance - (session.currentBet - currentTurnPlayer.currentBet)
+      );
+
       const amountInput = new TextInputBuilder()
         .setCustomId('raise_amount')
-        .setLabel(`추가 레이즈 코인 (최소: ${session.minRaise.toLocaleString()})`)
+        .setLabel(`추가 레이즈 코인 (보유: ${userBalance.toLocaleString()} 코인)`)
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder(`숫자만 입력 (예: ${session.minRaise})`)
+        .setPlaceholder(`최소: ${session.minRaise.toLocaleString()} ~ 최대: ${maxAffordableRaise.toLocaleString()} 코인`)
+        .setValue(String(Math.min(maxAffordableRaise, session.minRaise)))
         .setRequired(true);
 
       modal.addComponents(new ActionRowBuilder().addComponents(amountInput));

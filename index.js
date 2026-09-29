@@ -137,6 +137,14 @@ client.on('interactionCreate', async (interaction) => {
       else if (customId.startsWith('mafia_')) {
         await mafiaCommand.handleButton(interaction);
       }
+      // 도박 로비 목록 버튼
+      else if (customId === 'gamble_lobby') {
+        await gambleCommand.showLobby(interaction);
+      }
+      // 미니게임 로비 목록 버튼
+      else if (customId === 'minigame_lobby') {
+        await minigameCommand.execute(interaction);
+      }
     }
 
     // 3. 모달(팝업) 제출 처리

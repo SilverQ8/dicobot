@@ -626,7 +626,15 @@ module.exports = {
 
   // 버튼 인터랙션 처리기
   async handleButton(interaction) {
-    const [_, action, p3, p4] = interaction.customId.split('_');
+    const parts = interaction.customId.split('_');
+    const action = parts[1];
+
+    if (action === 'restart') {
+      return this.startFromSelect(interaction);
+    }
+
+    const p3 = parts[2];
+    const p4 = parts[3];
     const sessionId = p4 || p3;
     const session = mafiaSessions.get(sessionId);
 
@@ -685,10 +693,20 @@ module.exports = {
       if (session.players.length === 0) {
         await cleanupGameChannels(interaction.guild, session);
         mafiaSessions.delete(sessionId);
+        const replayRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('mafia_restart')
+            .setLabel('마피아 대기실 다시 생성 🕵️‍♂️')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId('minigame_lobby')
+            .setLabel('미니게임 목록 🎮')
+            .setStyle(ButtonStyle.Secondary)
+        );
         return interaction.update({
           content: '🚪 모든 참가자가 퇴장하여 방이 닫혔습니다.',
           embeds: [],
-          components: [],
+          components: [replayRow],
         });
       }
 
@@ -1654,9 +1672,20 @@ module.exports = {
       )
       .setTimestamp();
 
+    const replayRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('mafia_restart')
+        .setLabel('마피아 게임 다시 하기 🕵️‍♂️')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('minigame_lobby')
+        .setLabel('미니게임 목록 🎮')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
     if (interaction.replied || interaction.deferred) {
-      return interaction.message.edit({ embeds: [embed], components: [] });
+      return interaction.message.edit({ embeds: [embed], components: [replayRow] });
     }
-    return interaction.update({ embeds: [embed], components: [] });
+    return interaction.update({ embeds: [embed], components: [replayRow] });
   },
 };

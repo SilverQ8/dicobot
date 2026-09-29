@@ -24,9 +24,19 @@ function createBlackjackEmbed(session, gameOver = false, resultText = '') {
     ? calculateBlackjackScore(session.dealerHand)
     : calculateBlackjackScore([session.dealerHand[0]]);
 
+  const currentCoins = economy.getBalance(session.userId);
+
   const embed = new EmbedBuilder()
     .setTitle('🃏 블랙잭 (Blackjack)')
-    .setColor(gameOver ? (resultText.includes('승리') ? 0x2ecc71 : resultText.includes('무승부') ? 0xf1c40f : 0xe74c3c) : 0x3498db)
+    .setColor(
+      gameOver
+        ? resultText.includes('승리')
+          ? 0x2ecc71
+          : resultText.includes('무승부')
+          ? 0xf1c40f
+          : 0xe74c3c
+        : 0x3498db
+    )
     .addFields(
       {
         name: `🤖 딜러 카드 (${gameOver ? dealerScore + '점' : '??'})`,
@@ -41,6 +51,11 @@ function createBlackjackEmbed(session, gameOver = false, resultText = '') {
       {
         name: '💰 배팅 금액',
         value: `**${session.bet.toLocaleString()} 코인**`,
+        inline: true,
+      },
+      {
+        name: '🪙 잔여 코인',
+        value: `**${currentCoins.toLocaleString()} 코인**`,
         inline: true,
       }
     )
@@ -75,6 +90,24 @@ function createActionButtons(sessionId, canDouble = false) {
   }
 
   return row;
+}
+
+// 게임 종료 시 다시하기 액션 버튼 생성
+function createGameOverButtons(bet, userId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`bj_replay_${bet}_${userId}`)
+      .setLabel(`같은 금액으로 다시 하기 (${bet.toLocaleString()} 코인) 🔄`)
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`bj_rebet_${userId}`)
+      .setLabel('배팅금 변경 후 다시 하기 ⚙️')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('gamble_lobby')
+      .setLabel('도박 목록 🎰')
+      .setStyle(ButtonStyle.Secondary)
+  );
 }
 
 module.exports = {
@@ -157,7 +190,8 @@ module.exports = {
       }
 
       const embed = createBlackjackEmbed(session, true, resultText);
-      return interaction.reply({ embeds: [embed] });
+      const replayRow = createGameOverButtons(bet, userId);
+      return interaction.reply({ embeds: [embed], components: [replayRow] });
     }
 
     const embed = createBlackjackEmbed(session, false);
@@ -168,7 +202,41 @@ module.exports = {
 
   // 버튼 인터랙션 처리
   async handleButton(interaction) {
-    const [_, action, sessionId] = interaction.customId.split('_');
+    const parts = interaction.customId.split('_');
+    const action = parts[1];
+
+    // [다시하기 - 같은 금액]
+    if (action === 'replay') {
+      const bet = parseInt(parts[2], 10);
+      const ownerId = parts[3];
+
+      if (interaction.user.id !== ownerId) {
+        return interaction.reply({
+          content: '❌ 본인의 게임 결과에서만 다시하기를 누를 수 있습니다.',
+          ephemeral: true,
+        });
+      }
+
+      return this.startWithBet(interaction, bet);
+    }
+
+    // [다시하기 - 배팅금 변경 모달]
+    if (action === 'rebet') {
+      const ownerId = parts[2];
+
+      if (interaction.user.id !== ownerId) {
+        return interaction.reply({
+          content: '❌ 본인의 게임 결과에서만 배팅금을 변경할 수 있습니다.',
+          ephemeral: true,
+        });
+      }
+
+      const gambleCommand = require('./gamble');
+      return gambleCommand.showBlackjackModal(interaction);
+    }
+
+    // 일반 인게임 액션 처리
+    const sessionId = parts[2];
     const session = bjSessions.get(sessionId);
 
     if (!session) {
@@ -201,7 +269,8 @@ module.exports = {
           true,
           `💥 21점 초과(버스트)! 플레이어 패배 (-${session.bet.toLocaleString()} 코인)`
         );
-        return interaction.update({ embeds: [embed], components: [] });
+        const replayRow = createGameOverButtons(session.bet, userId);
+        return interaction.update({ embeds: [embed], components: [replayRow] });
       }
 
       if (score === 21) {
@@ -228,7 +297,8 @@ module.exports = {
           true,
           `💥 더블다운 버스트! 플레이어 패배 (-${session.bet.toLocaleString()} 코인)`
         );
-        return interaction.update({ embeds: [embed], components: [] });
+        const replayRow = createGameOverButtons(session.bet, userId);
+        return interaction.update({ embeds: [embed], components: [replayRow] });
       }
 
       return this.finishDealerTurn(interaction, session);
@@ -270,6 +340,7 @@ module.exports = {
     }
 
     const embed = createBlackjackEmbed(session, true, resultText);
-    return interaction.update({ embeds: [embed], components: [] });
+    const replayRow = createGameOverButtons(bet, userId);
+    return interaction.update({ embeds: [embed], components: [replayRow] });
   },
 };

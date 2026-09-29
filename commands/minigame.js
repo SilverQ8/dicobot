@@ -39,6 +39,7 @@ module.exports = {
     return interaction.reply({
       embeds: [embed],
       components: [row],
+      ephemeral: typeof interaction.isButton === 'function' ? interaction.isButton() : false,
     });
   },
 
