@@ -708,11 +708,13 @@ module.exports = {
     const currentTurnPlayer = session.players[session.currentTurnIndex];
     if (['check', 'call', 'raise', 'allin', 'fold'].includes(action)) {
       if (currentTurnPlayer.id !== userId) {
+        console.log(`[홀덤 턴 불일치] 액션: ${action}, 요청자: ${interaction.user.displayName}(${userId}), 현재 턴: ${currentTurnPlayer.name}(${currentTurnPlayer.id}) [인덱스: ${session.currentTurnIndex}]`);
         return interaction.reply({
           content: `⏳ 지금은 **${currentTurnPlayer.name}** 님의 차례입니다! 순서를 기다려주세요.`,
           ephemeral: true,
         });
       }
+      console.log(`[홀덤 액션 허용] 액션: ${action}, 실행자: ${currentTurnPlayer.name}(${userId}) [인덱스: ${session.currentTurnIndex}]`);
     }
 
     // --- [체크 (Check)] ---
@@ -862,6 +864,7 @@ module.exports = {
       return this.advanceStreet(interaction, session);
     }
 
+    console.log(`[홀덤 턴 넘김] ${session.players[session.currentTurnIndex]?.name}(인덱스 ${session.currentTurnIndex}) -> ${session.players[nextIndex]?.name}(인덱스 ${nextIndex})`);
     session.currentTurnIndex = nextIndex;
     return updateBoardMessage(interaction, session);
   },
@@ -1109,6 +1112,7 @@ module.exports = {
     currentTurnPlayer.totalBet += cost;
     session.currentBet = targetBet;
     session.minRaise = raiseAmount;
+    console.log(`[홀덤 레이즈 성공] 플레이어: ${currentTurnPlayer.name}, 레이즈액: +${raiseAmount}, 총 베팅액: ${targetBet}`);
 
     // 만약 보유 코인을 전부 걸었다면 올인(All-In) 플래그 설정
     if (cost >= currentBal) {
@@ -1125,10 +1129,12 @@ module.exports = {
     currentTurnPlayer.acted = true;
 
     // 모달을 닫고 사용자에게 즉시 확인 응답 전송
-    await interaction.reply({
-      content: `✅ **+${raiseAmount.toLocaleString()} 코인** 레이즈 완료! (현재 콜 기준액: **${targetBet.toLocaleString()} 코인**)`,
-      ephemeral: true,
-    });
+    await interaction
+      .reply({
+        content: `✅ **+${raiseAmount.toLocaleString()} 코인** 레이즈 완료! (현재 콜 기준액: **${targetBet.toLocaleString()} 코인**)`,
+        ephemeral: true,
+      })
+      .catch((e) => console.error('모달 응답 에러 (무시하고 턴 진행):', e));
 
     return this.advanceTurn(interaction, session);
   },
