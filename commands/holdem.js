@@ -214,25 +214,40 @@ async function updateBoardMessage(interaction, session, gameOver = false, winner
     : [createTurnButtons(session.sessionId, session)];
 
   try {
+    // 1. 모달 제출 인터랙션인 경우: 채널 메시지를 직접 가져와서 수정
     if (interaction.isModalSubmit && interaction.isModalSubmit()) {
-      // 모달 제출 시에는 editReply로 원래 컴포넌트 메시지 갱신
-      await interaction.editReply({ embeds: [embed], components: row });
-    } else if (interaction.replied || interaction.deferred) {
-      if (interaction.message) {
-        await interaction.message.edit({ embeds: [embed], components: row });
-      } else {
-        await interaction.editReply({ embeds: [embed], components: row });
+      if (session.messageId && interaction.channel) {
+        const boardMsg = await interaction.channel.messages.fetch(session.messageId).catch(() => null);
+        if (boardMsg) {
+          await boardMsg.edit({ embeds: [embed], components: row });
+          return;
+        }
       }
-    } else {
-      await interaction.update({ embeds: [embed], components: row });
+    }
+
+    // 2. 일반 버튼 인터랙션인 경우 (아직 응답 안 했을 때 즉시 update)
+    if (interaction.isButton && interaction.isButton()) {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.update({ embeds: [embed], components: row });
+        return;
+      }
+    }
+
+    // 3. session.messageId로 채널 메시지 직접 수정
+    if (session.messageId && interaction.channel) {
+      const boardMsg = await interaction.channel.messages.fetch(session.messageId).catch(() => null);
+      if (boardMsg) {
+        await boardMsg.edit({ embeds: [embed], components: row });
+        return;
+      }
+    }
+
+    // 4. interaction.message 폴백
+    if (interaction.message) {
+      await interaction.message.edit({ embeds: [embed], components: row });
     }
   } catch (err) {
     console.error('보드 메시지 업데이트 오류:', err);
-    try {
-      if (interaction.message) {
-        await interaction.message.edit({ embeds: [embed], components: row });
-      }
-    } catch (e) {}
   }
 }
 
@@ -318,7 +333,8 @@ module.exports = {
         .setStyle(ButtonStyle.Primary)
     );
 
-    await interaction.reply({ embeds: [embed], components: [row] });
+    const response = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
+    session.messageId = response.id;
   },
 
   // 버튼 인터랙션 핸들러
@@ -819,10 +835,10 @@ module.exports = {
 
     // 라운드 종료 조건:
     // 1) 칩을 걸 수 있는 플레이어가 0명 (전원 올인)이거나,
-    // 2) 모든 생존자가 행동(acted)을 마쳤고, 올인하지 않은 모든 플레이어의 베팅액이 최고 베팅액(currentBet)과 일치할 때
+    // 2) 모든 생존자가 (올인이거나 행동을 마쳤고), 올인하지 않은 모든 플레이어의 베팅액이 최고 베팅액(currentBet)과 일치할 때
     const roundFinished =
       bettablePlayers.length === 0 ||
-      (activePlayers.every((p) => p.acted) &&
+      (activePlayers.every((p) => p.allIn || p.acted) &&
         bettablePlayers.every((p) => p.currentBet === session.currentBet));
 
     if (roundFinished) {
@@ -1107,7 +1123,13 @@ module.exports = {
     }
 
     currentTurnPlayer.acted = true;
-    await interaction.deferUpdate();
+
+    // 모달을 닫고 사용자에게 즉시 확인 응답 전송
+    await interaction.reply({
+      content: `✅ **+${raiseAmount.toLocaleString()} 코인** 레이즈 완료! (현재 콜 기준액: **${targetBet.toLocaleString()} 코인**)`,
+      ephemeral: true,
+    });
+
     return this.advanceTurn(interaction, session);
   },
 };
