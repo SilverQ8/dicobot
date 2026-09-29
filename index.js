@@ -6,6 +6,7 @@ const {
   Routes,
   Collection,
   ActivityType,
+  AttachmentBuilder,
 } = require('discord.js');
 
 const teamCommand = require('./commands/team');
@@ -17,6 +18,7 @@ const holdemCommand = require('./commands/holdem');
 const mafiaCommand = require('./commands/mafia');
 const minigameCommand = require('./commands/minigame');
 const gambleCommand = require('./commands/gamble');
+const svgCommand = require('./commands/svg');
 
 // 환경변수 검증
 if (!process.env.DISCORD_TOKEN) {
@@ -44,6 +46,7 @@ const commandList = [
   workCommand,
   minigameCommand,
   gambleCommand,
+  svgCommand,
 ];
 
 for (const cmd of commandList) {
@@ -169,6 +172,33 @@ client.on('interactionCreate', async (interaction) => {
       }
     } catch (e) {
       // 이미 만료된 인터랙션 무시
+    }
+  }
+});
+
+// 채팅창에 .svg 파일 첨부 시 자동 렌더링 이미지 미리보기 답장
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+
+  const svgAttachment = message.attachments.find((att) =>
+    att.name && att.name.toLowerCase().endsWith('.svg')
+  );
+
+  if (svgAttachment) {
+    try {
+      const res = await fetch(svgAttachment.url);
+      if (!res.ok) return;
+      const arrayBuf = await res.arrayBuffer();
+      const pngBuffer = await svgCommand.convertSvgToPng(Buffer.from(arrayBuf), 2);
+      const filename = `${svgAttachment.name.replace(/\.svg$/i, '')}.png`;
+      const attachment = new AttachmentBuilder(pngBuffer, { name: filename });
+
+      await message.reply({
+        content: `🖼️ **${svgAttachment.name}** 이미지 렌더링 미리보기:`,
+        files: [attachment],
+      });
+    } catch (err) {
+      console.error('SVG 자동 렌더링 실패:', err);
     }
   }
 });
