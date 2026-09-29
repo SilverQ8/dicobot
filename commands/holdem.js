@@ -162,13 +162,16 @@ function createTurnButtons(sessionId, session) {
     );
   }
 
-  // 레이즈 (모달 팝업 입력 방식)
-  row.addComponents(
-    new ButtonBuilder()
-      .setCustomId(`holdem_raise_${sessionId}`)
-      .setLabel('레이즈 (금액입력) 📈')
-      .setStyle(ButtonStyle.Success)
-  );
+  // 레이즈 (모달 팝업 입력 방식 - 콜 금액보다 잔액이 많을 때만 가능)
+  const userBalance = economy.getBalance(currentTurnPlayer.id);
+  if (userBalance > callCost) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`holdem_raise_${sessionId}`)
+        .setLabel('레이즈 (금액입력) 📈')
+        .setStyle(ButtonStyle.Success)
+    );
+  }
 
   // 올인 (All-In)
   row.addComponents(
@@ -211,15 +214,25 @@ async function updateBoardMessage(interaction, session, gameOver = false, winner
     : [createTurnButtons(session.sessionId, session)];
 
   try {
-    if (interaction.replied || interaction.deferred) {
+    if (interaction.isModalSubmit && interaction.isModalSubmit()) {
+      // 모달 제출 시에는 editReply로 원래 컴포넌트 메시지 갱신
+      await interaction.editReply({ embeds: [embed], components: row });
+    } else if (interaction.replied || interaction.deferred) {
       if (interaction.message) {
         await interaction.message.edit({ embeds: [embed], components: row });
+      } else {
+        await interaction.editReply({ embeds: [embed], components: row });
       }
     } else {
       await interaction.update({ embeds: [embed], components: row });
     }
   } catch (err) {
     console.error('보드 메시지 업데이트 오류:', err);
+    try {
+      if (interaction.message) {
+        await interaction.message.edit({ embeds: [embed], components: row });
+      }
+    } catch (e) {}
   }
 }
 
@@ -1080,6 +1093,11 @@ module.exports = {
     currentTurnPlayer.totalBet += cost;
     session.currentBet = targetBet;
     session.minRaise = raiseAmount;
+
+    // 만약 보유 코인을 전부 걸었다면 올인(All-In) 플래그 설정
+    if (cost >= currentBal) {
+      currentTurnPlayer.allIn = true;
+    }
 
     // 다른 생존자들 액션 재요구
     for (const p of session.players) {
